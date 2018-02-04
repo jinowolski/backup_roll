@@ -16,7 +16,7 @@ def ts2d(timestamp):
     return datetime.date.fromtimestamp(timestamp)
 
 
-class Workspace:
+class Workspace(object):
 
     def __init__(self, workspace_dir, offset_hours=0):
         self.workspace_dir = workspace_dir
@@ -46,8 +46,11 @@ class Workspace:
     def all_days(self):
         return self.listing().keys()
 
+    def list(self, date):
+        return self.listing().get(date, [])
 
-class Retention:
+
+class Retention(object):
 
     def __init__(self, retention_dir):
         self.retention_dir = retention_dir
