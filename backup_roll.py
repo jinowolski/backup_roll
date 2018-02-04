@@ -1,15 +1,50 @@
 #!/usr/bin/env python
 
 import argparse
+import datetime
 import os
 import sys
+
+from os.path import isfile
+
+
+def ts2dt(timestamp):
+    return datetime.datetime.fromtimestamp(timestamp)
+
+
+def ts2d(timestamp):
+    return datetime.date.fromtimestamp(timestamp)
 
 
 class Workspace:
 
-    def __init__(self, workspace_dir, offset_hours=6):
+    def __init__(self, workspace_dir, offset_hours=0):
         self.workspace_dir = workspace_dir
         self.offset_hours = offset_hours
+        self._listing = None
+
+    def listing(self):
+        if self._listing is None:
+            self._listing = self._create_listing()
+        return self._listing
+
+    def _create_listing(self):
+        paths = map(lambda filename: os.path.join(self.workspace_dir, filename),
+                        os.listdir(self.workspace_dir))
+        listing = {}
+        for path in paths:
+            if not isfile(path):
+                continue
+            stat = os.stat(path)
+            dt = ts2dt(stat.st_mtime) + datetime.timedelta(hours=self.offset_hours)
+            d = dt.date()
+            if d not in listing.keys():
+                listing[d] = []
+            listing[d].append(path)
+        return listing
+
+    def all_days(self):
+        return self.listing().keys()
 
 
 class Retention:
@@ -131,10 +166,11 @@ def main(args_):
                                            monthdays=parser.monthdays))
     if parser.weekdays:
         retentions.append(WeeklyRetention(retention_dir=parser.weekly_dir,
-                                           keep_months=parser.weekly_retention,
-                                           weekdays=parser.weeklydays))
+                                          keep_months=parser.weekly_retention,
+                                          weekdays=parser.weeklydays))
     retentions.append(DailyRetention(retention_dir=parser.daily_dir,
                                      keep_days=parser.daily_retention))
+
 
 if __name__ == "__main__":
     main(sys.argv)
