@@ -285,6 +285,10 @@ def main(args_):
     if args.monthly_dir is None:
         args.monthly_dir = os.path.join(args.workspace_dir, 'monthly')
 
+    if os.path.realpath(args.workspace_dir) == os.path.realpath(os.path.dirname(__file__)):
+        logging.error("Executing this script for itself directory isn't a good idea")
+        sys.exit(1)
+
     workspace = Workspace(args.workspace_dir, args.offset_hours)
     retentions = []
     if args.monthdays:
