@@ -97,7 +97,18 @@ class Directory(object):
 
 
 class Workspace(Directory):
-    pass
+
+    def cleanup(self, dry_run=False):
+        if not os.path.isdir(self.directory):
+            return
+        paths = map(lambda filename: os.path.join(self.directory, filename),
+                    os.listdir(self.directory))
+        for path in paths:
+            if not isfile(path):
+                continue
+            logging.info("Deleting workspace file: {file}".format(file=path))
+            if not dry_run:
+                os.remove(path)
 
 
 class Retention(Directory):
@@ -111,7 +122,7 @@ class Retention(Directory):
     def filter_for_cleanup(self, dates):
         return set(dates) - set(self.filter_for_collect(dates))
 
-    def collect(self, workspace):
+    def collect(self, workspace, dry_run=False):
         """Copies files from workspace to the retention directory"""
         if not os.path.isdir(self.directory):
             os.mkdir(self.directory)
@@ -123,11 +134,12 @@ class Retention(Directory):
                 basename = os.path.basename(src)
                 dest = os.path.join(self.directory, basename)
                 logging.info("Copying {src} -> {dest}".format(src=src, dest=dest))
-                shutil.copy(src, dest)
-                stat = os.stat(src)
-                os.utime(dest, (stat.st_atime, stat.st_mtime))
+                if not dry_run:
+                    shutil.copy(src, dest)
+                    stat = os.stat(src)
+                    os.utime(dest, (stat.st_atime, stat.st_mtime))
 
-    def cleanup(self):
+    def cleanup(self, dry_run=False):
         """Deletes old files from the retention directory"""
         all_days = self.all_days()
         cleanup_days = self.filter_for_cleanup(all_days)
@@ -135,7 +147,8 @@ class Retention(Directory):
             old_files = self.list(day)
             for old_file in old_files:
                 logging.info("Deleting old file: {old_file}".format(old_file=old_file))
-                os.remove(old_file)
+                if not dry_run:
+                    os.remove(old_file)
 
 
 class DailyRetention(Retention):
@@ -205,6 +218,7 @@ class MonthlyRetention(Retention):
         return filter(lambda date: date > min_date and (
                 date.day in self.monthdays or (date.day - self._month_length(date)) - 1 in self.monthdays), dates)
 
+
 def main(args_):
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-s', '--workspace-dir', type=str,
@@ -247,13 +261,13 @@ def main(args_):
                              'before or after midnight',
                         metavar='HOURS')
     parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
-    parser.add_argument('-q' '--quiet', action='store_true',
+    parser.add_argument('-q', '--quiet', action='store_true', default=False,
                         help='Do not print anything to stdout')
     args = parser.parse_args(args_)
 
-    LoggerSetup(logging.WARNING)
+    LoggerSetup(logging.INFO)
     if args.quiet:
-        LoggerSetup(logging.ERROR)
+        LoggerSetup(logging.WARNING)
     if args.verbose:
         LoggerSetup(logging.DEBUG)
 
@@ -268,17 +282,27 @@ def main(args_):
 
     workspace = Workspace(args.workspace_dir, args.offset_hours)
     retentions = []
-    if parser.monthdays:
-        retentions.append(MonthlyRetention(retention_dir=parser.monthly_dir,
-                                           keep_months=parser.monthly_retention,
-                                           monthdays=parser.monthdays))
-    if parser.weekdays:
-        retentions.append(WeeklyRetention(retention_dir=parser.weekly_dir,
-                                          keep_months=parser.weekly_retention,
-                                          weekdays=parser.weeklydays))
-    retentions.append(DailyRetention(retention_dir=parser.daily_dir,
-                                     keep_days=parser.daily_retention))
+    if args.monthdays:
+        retentions.append(MonthlyRetention(retention_dir=args.monthly_dir,
+                                           offset_hours=args.offset_hours,
+                                           keep_months=args.monthly_retention,
+                                           monthdays=args.monthdays))
+    if args.weekdays:
+        retentions.append(WeeklyRetention(retention_dir=args.weekly_dir,
+                                          offset_hours=args.offset_hours,
+                                          keep_weeks=args.weekly_retention,
+                                          weekdays=args.weekdays))
+    retentions.append(DailyRetention(retention_dir=args.daily_dir,
+                                     offset_hours=args.offset_hours,
+                                     keep_days=args.daily_retention))
+    for retention in retentions:
+        retention.collect(workspace, dry_run=args.dry_run)
+        if not args.keep_old_backups:
+            retention.cleanup(dry_run=args.dry_run)
+    if not args.keep_workspace:
+        workspace.cleanup(dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    argv = sys.argv
+    main(sys.argv[1:])
