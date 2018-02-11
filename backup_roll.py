@@ -73,6 +73,8 @@ class Directory(object):
         return self._listing
 
     def _create_listing(self):
+        if not os.path.isdir(self.directory):
+            return {}
         paths = map(lambda filename: os.path.join(self.directory, filename),
                     os.listdir(self.directory))
         listing = {}
@@ -168,6 +170,11 @@ class WeeklyRetention(Retention):
         self.keep_weeks = keep_weeks
         self.weekdays = weekdays
 
+    def filter_for_collect(self, dates):
+        min_date = datetime.datetime.now().date() - datetime.timedelta(days=self.keep_weeks * 7)
+        logging.debug("Minimal day for collecting weekly files: {day}".format(day=min_date))
+        return filter(lambda date: date > min_date and date.weekday() in self.weekdays, dates)
+
 
 class MonthlyRetention(Retention):
 
@@ -184,6 +191,19 @@ class MonthlyRetention(Retention):
         self.keep_months = keep_months
         self.monthdays = monthdays
 
+    def _month_length(self, date):
+        return ((date.replace(day=28) + datetime.timedelta(days=4)).replace(
+            day=1) - datetime.timedelta(days=1)).day
+
+    def filter_for_collect(self, dates):
+        today = datetime.datetime.now().date()
+        first = today.replace(day=1)
+        n_months_ago = first.replace(year=first.year - ((self.keep_months + 12 - first.month) / 12),
+                                     month=(first.month - self.keep_months - 1) % 12 + 1)
+        diff = first - n_months_ago
+        min_date = today - diff
+        return filter(lambda date: date > min_date and (
+                date.day in self.monthdays or (date.day - self._month_length(date)) - 1 in self.monthdays), dates)
 
 def main(args_):
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
