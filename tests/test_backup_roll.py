@@ -1,24 +1,27 @@
 # -*- coding: utf-8 -*-
+import datetime
+import logging
 import os
 import random
 import shutil
 import string
 import tempfile
+import time
 import unittest
 
-import time
-
-import datetime
-
-from backup_roll import main, Workspace
+from backup_roll import Workspace, DailyRetention, LoggerSetup
 
 
 class TestBackupRoll(unittest.TestCase):
 
     def setUp(self):
-        temp_local_dir_name = 'test_' + ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(10))
+        LoggerSetup(logging.DEBUG)
+        logging.debug("TEST {test}".format(test=self._testMethodName))
+        temp_local_dir_name = 'test_' + ''.join(
+            random.choice(string.ascii_lowercase + string.digits) for _ in range(10))
         self.test_dir = os.path.join(tempfile.gettempdir(), temp_local_dir_name)
         os.mkdir(self.test_dir, 0o700)
+        self.daily_dir = os.path.join(self.test_dir, 'daily')
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
@@ -35,8 +38,10 @@ class TestBackupRoll(unittest.TestCase):
     def _now():
         return int(time.time())
 
-    def _file(self, name, mtime, contents='test'):
-        path = os.path.join(self.test_dir, name)
+    def _file(self, name, mtime, contents='test', basedir=None):
+        if basedir is None:
+            basedir = self.test_dir
+        path = os.path.join(basedir, name)
         if isinstance(mtime, datetime.datetime):
             mtime = TestBackupRoll._dt2ts(mtime)
         f = open(path, 'w')
@@ -50,6 +55,9 @@ class TestBackupRoll(unittest.TestCase):
             mtime = TestBackupRoll._dt2ts(mtime)
         os.mkdir(path)
         os.utime(path, (TestBackupRoll._now(), mtime))
+
+
+class TestWorkspace(TestBackupRoll):
 
     def test_workspace_dates_empty(self):
         pass
@@ -96,7 +104,7 @@ class TestBackupRoll(unittest.TestCase):
     def test_workspace_dates_nested_file_doesnt_count(self):
         dt = datetime.datetime(2000, 12, 31)
         self._dir('testdir', dt)
-        self._file(os.path.join('testdir','testfile'), dt)
+        self._file(os.path.join('testdir', 'testfile'), dt)
 
         workspace = Workspace(self.test_dir)
         result = workspace.all_days()
@@ -211,10 +219,123 @@ class TestBackupRoll(unittest.TestCase):
         self.assertEqual(2, len(result))
 
 
-    # Nie wywala się, gdy nie ma plików w workspace
-    # Nie kasuje plików, których nie powinien
-    # Przenosi pliki, które powinien
-    # Kasuje pliki, które powinien
-    # Nie przenosi plików, których nie powinien
-    # Uwzględnia zmienne konfiguracyjne
+class TestDailyRetention(TestBackupRoll):
 
+    def test_daily_creates_dir(self):
+        self.assertFalse(os.path.exists(self.daily_dir), 'incorrect test prerequisites')
+        self.assertFalse(os.path.isdir(self.daily_dir), 'incorrect test prerequisites')
+
+        workspace = Workspace(self.test_dir)
+        daily = DailyRetention(self.daily_dir)
+        daily.collect(workspace)
+
+        self.assertTrue(os.path.isdir(self.daily_dir), 'daily dir should be created')
+
+    def test_daily_keeps_existing_dir(self):
+        os.mkdir(self.daily_dir)
+        self._file('old', datetime.datetime.now(), basedir=self.daily_dir)
+
+        workspace = Workspace(self.test_dir)
+        daily = DailyRetention(self.daily_dir)
+        daily.collect(workspace)
+
+        self.assertTrue(os.path.isdir(self.daily_dir), 'daily dir should exist')
+        self.assertTrue(os.path.isfile(os.path.join(self.daily_dir, 'old')), 'old file should exist')
+
+    def test_daily_collects_only_files_within_retention(self):
+        midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        before_midnight = midnight - datetime.timedelta(seconds=1)
+        after_midnight = midnight + datetime.timedelta(seconds=1)
+        self._file('midnight', midnight)
+        self._file('before_midnight', before_midnight)
+        self._file('after_midnight', after_midnight)
+
+        workspace = Workspace(self.test_dir)
+        daily = DailyRetention(self.daily_dir, keep_days=1)
+        daily.collect(workspace)
+
+        self.assertTrue(os.path.isfile(os.path.join(self.daily_dir, 'midnight')),
+                        '"midnight" file should exist')
+        self.assertFalse(os.path.exists(os.path.join(self.daily_dir, 'before_midnight')),
+                         '"before_midnight" file should not exist')
+        self.assertTrue(os.path.isfile(os.path.join(self.daily_dir, 'after_midnight')),
+                        '"after_midnight" file should exist')
+
+    def test_daily_collects_only_files_regarding_offset(self):
+        offsetted = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(
+            hours=1)
+        before_offsetted = offsetted - datetime.timedelta(seconds=1)
+        after_offsetted = offsetted + datetime.timedelta(seconds=1)
+        self._file('offsetted', offsetted)
+        self._file('before_offsetted', before_offsetted)
+        self._file('after_offsetted', after_offsetted)
+
+        workspace = Workspace(self.test_dir, offset_hours=1)
+        daily = DailyRetention(self.daily_dir, keep_days=1)
+        daily.collect(workspace)
+
+        self.assertTrue(os.path.isfile(os.path.join(self.daily_dir, 'offsetted')),
+                        '"offsetted" file should exist')
+        self.assertFalse(os.path.exists(os.path.join(self.daily_dir, 'before_offsetted')),
+                         '"before_offsetted" file should not exist')
+        self.assertTrue(os.path.isfile(os.path.join(self.daily_dir, 'after_offsetted')),
+                        '"after_offsetted" file should exist')
+
+    def test_daily_deletes_only_files_outside_retention(self):
+        midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday = midnight - datetime.timedelta(days=1)
+        after_yesterday = yesterday + datetime.timedelta(seconds=1)
+        before_midnight = midnight - datetime.timedelta(seconds=1)
+        after_midnight = midnight + datetime.timedelta(seconds=1)
+        self._file('yesterday', yesterday)
+        self._file('after_yesterday', after_yesterday)
+        self._file('midnight', midnight)
+        self._file('before_midnight', before_midnight)
+        self._file('after_midnight', after_midnight)
+        given_workspace = Workspace(self.test_dir)
+        given_daily = DailyRetention(self.daily_dir, keep_days=2)
+        given_daily.collect(given_workspace)
+
+        daily = DailyRetention(self.daily_dir, keep_days=1)
+        daily.cleanup()
+
+        self.assertFalse(os.path.exists(os.path.join(self.daily_dir, 'yesterday')),
+                         '"yesterday" file should not exist')
+        self.assertFalse(os.path.exists(os.path.join(self.daily_dir, 'after_yesterday')),
+                         '"after_yesterday" file should not exist')
+        self.assertFalse(os.path.exists(os.path.join(self.daily_dir, 'before_midnight')),
+                         '"before_midnight" file should not exist')
+        self.assertTrue(os.path.isfile(os.path.join(self.daily_dir, 'midnight')),
+                        '"midnight" file should exist')
+        self.assertTrue(os.path.isfile(os.path.join(self.daily_dir, 'after_midnight')),
+                        '"after_midnight" file should exist')
+
+    def test_daily_deletes_only_files_regarding_offset(self):
+        offsetted = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(
+            hours=1)
+        before_offsetted = offsetted - datetime.timedelta(seconds=1)
+        after_offsetted = offsetted + datetime.timedelta(seconds=1)
+        offsetted_yesterday = offsetted - datetime.timedelta(days=1)
+        after_offseted_yesterday = offsetted_yesterday + datetime.timedelta(seconds=1)
+        self._file('offsetted', offsetted)
+        self._file('before_offsetted', before_offsetted)
+        self._file('after_offsetted', after_offsetted)
+        self._file('offsetted_yesterday', offsetted_yesterday)
+        self._file('after_offseted_yesterday', after_offseted_yesterday)
+        given_workspace = Workspace(self.test_dir, offset_hours=1)
+        given_daily = DailyRetention(self.daily_dir, keep_days=2)
+        given_daily.collect(given_workspace)
+
+        daily = DailyRetention(self.daily_dir, offset_hours=1, keep_days=1)
+        daily.cleanup()
+
+        self.assertFalse(os.path.exists(os.path.join(self.daily_dir, 'offsetted_yesterday')),
+                         '"offsetted_yesterday" file should not exist')
+        self.assertFalse(os.path.exists(os.path.join(self.daily_dir, 'after_offseted_yesterday')),
+                         '"after_offseted_yesterday" file should not exist')
+        self.assertFalse(os.path.exists(os.path.join(self.daily_dir, 'before_offsetted')),
+                         '"before_offsetted" file should not exist')
+        self.assertTrue(os.path.isfile(os.path.join(self.daily_dir, 'offsetted')),
+                        '"offsetted" file should exist')
+        self.assertTrue(os.path.isfile(os.path.join(self.daily_dir, 'after_offsetted')),
+                        '"after_offsetted" file should exist')
