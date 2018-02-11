@@ -14,7 +14,7 @@ usage: backup_roll.py [-h] [-s WORKSPACE_DIR] [-d DAILY_DIR] [-w WEEKLY_DIR]
                       [-m MONTHLY_DIR] [-D DAYS] [-W WEEKS] [-M MONTHS]
                       [--weekdays [WEEKDAY [WEEKDAY ...]]]
                       [--monthdays [MONTHDAY [MONTHDAY ...]]] [-k] [-K] [-n]
-                      [-o HOURS] [-q--quiet]
+                      [-o HOURS] [-v] [-q]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -65,5 +65,6 @@ optional arguments:
                         want always keep e.g. saturday/sunday backup
                         regardless it actually was finished slightly before or
                         after midnight (default: 6)
-  -q--quiet             Do not print anything to stdout (default: False)
+  -v, --verbose         Verbose output (default: False)
+  -q, --quiet           Do not print anything to stdout (default: False)
 ```
