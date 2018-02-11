@@ -125,7 +125,12 @@ class Retention(Directory):
     def collect(self, workspace, dry_run=False):
         """Copies files from workspace to the retention directory"""
         if not os.path.isdir(self.directory):
-            os.mkdir(self.directory)
+            logging.info("Creating directory {directory}".format(directory=self.directory))
+            if not dry_run:
+                mask = os.umask(0)
+                os.umask(mask)
+                perms = mask ^ 0o0777 # looks like os.mkdir ignores umask, so handle it manually
+                os.mkdir(self.directory, perms)
         all_days = workspace.all_days()
         collect_days = self.filter_for_collect(all_days)
         for day in collect_days:
