@@ -9,7 +9,7 @@ import tempfile
 import time
 import unittest
 
-from backup_roll import Workspace, DailyRetention, LoggerSetup, WeeklyRetention, MonthlyRetention
+from backup_roll.backup_roll import Workspace, DailyRetention, LoggerSetup, WeeklyRetention, MonthlyRetention
 
 
 class TestBackupRoll(unittest.TestCase):
