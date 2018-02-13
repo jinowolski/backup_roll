@@ -245,7 +245,7 @@ def main(args_):
                         help='How many months monthly backups will be kept before being deleted',
                         metavar='MONTHS')
     parser.add_argument('--weekdays', default=[6], nargs='*', type=int,
-                        help='Weekdays to store weekly backups. 1 is monday .. 7 is sunday. '
+                        help='Weekdays to store weekly backups. 0 is monday .. 6 is sunday. '
                              'Empty value disables weekly backups',
                         metavar='WEEKDAY')
     parser.add_argument('--monthdays', default=[1], nargs='*', type=int,

@@ -46,7 +46,7 @@ libraries are required.
                             How many months monthly backups will be kept before
                             being deleted (default: 12)
       --weekdays [WEEKDAY [WEEKDAY ...]]
-                            Weekdays to store weekly backups. 1 is monday .. 7 is
+                            Weekdays to store weekly backups. 0 is monday .. 6 is
                             sunday. Empty value disables weekly backups (default:
                             [6])
       --monthdays [MONTHDAY [MONTHDAY ...]]
